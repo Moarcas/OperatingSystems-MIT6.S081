@@ -155,7 +155,7 @@ freeproc(struct proc *p)
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   if(p->kpagetable)
-    proc_freekpagetable(p->kpagetable);
+    kernel_freewalk(p->kpagetable);
   p->pagetable = 0;
   p->kpagetable = 0;
   p->sz = 0;
@@ -211,12 +211,6 @@ proc_freepagetable(pagetable_t pagetable, uint64 sz)
   uvmfree(pagetable, sz);
 }
 
-void
-proc_freekpagetable(pagetable_t pagetable)
-{
-  kvmunmap(pagetable);
-}
-
 // a user program that calls exec("/init")
 // od -t xC initcode
 uchar initcode[] = {
@@ -243,6 +237,8 @@ userinit(void)
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
 
+  copy_page_table(p->pagetable, p->kpagetable, 0, p->sz);
+
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
   p->trapframe->sp = PGSIZE;  // user stack pointer
@@ -264,12 +260,14 @@ growproc(int n)
   struct proc *p = myproc();
 
   sz = p->sz;
+  
   if(n > 0){
-    if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
+    if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0 || copy_page_table(p->pagetable, p->kpagetable, sz, sz + n) == -1) {
       return -1;
     }
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
+    uvmdealloc(p->kpagetable, sz, sz + n);
   }
   p->sz = sz;
   return 0;
@@ -295,6 +293,13 @@ fork(void)
     release(&np->lock);
     return -1;
   }
+
+  if(copy_page_table(np->pagetable, np->kpagetable, 0, p->sz) < 0){
+    freeproc(np);
+    release(&np->lock);
+    return -1;
+  }
+
   np->sz = p->sz;
 
   np->parent = p;

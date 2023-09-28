@@ -116,6 +116,10 @@ exec(char *path, char **argv)
   p->trapframe->sp = sp; // initial stack pointer
   proc_freepagetable(oldpagetable, oldsz);
 
+  // Copy the memory from user page table to process kernel page table
+  if(copy_page_table(p->pagetable, p->kpagetable, 0, p->sz) == -1)
+    goto bad;
+
   if(p->pid == 1) 
     vmprint(p->pagetable);
 
@@ -123,7 +127,7 @@ exec(char *path, char **argv)
 
  bad:
   if(pagetable)
-    proc_freepagetable(pagetable, sz);
+    proc_freepagetable(pagetable, p->sz);    
   if(ip){
     iunlockput(ip);
     end_op();
