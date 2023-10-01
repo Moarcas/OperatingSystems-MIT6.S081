@@ -59,8 +59,8 @@ kvminithart()
 pagetable_t
 create_kernel_pagetable(struct proc *p)
 {
-  pagetable_t pagetable = (pagetable_t) kalloc();
-  memset(pagetable, 0, PGSIZE);
+  pagetable_t pagetable = uvmcreate();
+  if(pagetable == 0) return 0;
 
   // uart registers
   kvmmap2(pagetable, UART0, UART0, PGSIZE, PTE_R | PTE_W);
@@ -218,8 +218,9 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
     panic("uvmunmap: not aligned");
 
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
-    if((pte = walk(pagetable, a, 0)) == 0)
+    if((pte = walk(pagetable, a, 0)) == 0){
       panic("uvmunmap: walk");
+    }
     if((*pte & PTE_V) == 0)
       panic("uvmunmap: not mapped");
     if(PTE_FLAGS(*pte) == PTE_V)
@@ -283,7 +284,7 @@ uint64
 uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
 {
   // If the new size is bigger than the PLIC limit, return error
-  if(PGROUNDUP(newsz) >= PLIC)
+  if(PGROUNDUP(newsz) > PLIC)
     return 0;
 
   char *mem;
@@ -324,7 +325,19 @@ uvmdealloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
     int npages = (PGROUNDUP(oldsz) - PGROUNDUP(newsz)) / PGSIZE;
     uvmunmap(pagetable, PGROUNDUP(newsz), npages, 1);
   }
+  return newsz;
+}
 
+uint64
+kvmdealloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
+{
+  if(newsz >= oldsz)
+    return oldsz;
+
+  if(PGROUNDUP(newsz) < PGROUNDUP(oldsz)){
+    int npages = (PGROUNDUP(oldsz) - PGROUNDUP(newsz)) / PGSIZE;
+    uvmunmap(pagetable, PGROUNDUP(newsz), npages, 0);
+  }
   return newsz;
 }
 
@@ -422,34 +435,18 @@ kvmcopy(pagetable_t old, pagetable_t new)
   return -1;
 }
 
-int
+void
 copy_page_table(pagetable_t old, pagetable_t new, uint64 oldsz, uint64 newsz)
 {
-  pte_t *pte;
-  uint64 pa, i;
-  uint flags;
-  char *mem;
-
-  for(i = PGROUNDUP(oldsz); i < newsz; i += PGSIZE){
-    if((pte = walk(old, i, 0)) == 0)
-      panic("uvmcopy: pte should exist");
-    if((*pte & PTE_V) == 0)
-      panic("uvmcopy: page not present");
-    pa = PTE2PA(*pte);
-    flags = PTE_FLAGS(*pte) & ~PTE_X;
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
-      goto err;
+  pte_t *ptesrc, *ptedst;
+  uint64 i;
+  for(i = PGROUNDDOWN(oldsz); i < newsz; i += PGSIZE){
+    if((ptesrc = walk(old, i, 0)) == 0)
+      panic("copy_page_table: pte should exist");
+    if((ptedst = walk(new, i, 1)) == 0)
+      panic("copy_page_table: out of memory");
+    *ptedst = *ptesrc & (~PTE_U);
     }
-  }
-  return 0;
-
- err:
-  uvmunmap(new, 0, i / PGSIZE, 1);
-  return -1;
 }
 
 // mark a PTE invalid for user access.

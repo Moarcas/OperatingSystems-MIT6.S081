@@ -117,8 +117,7 @@ exec(char *path, char **argv)
   proc_freepagetable(oldpagetable, oldsz);
 
   // Copy the memory from user page table to process kernel page table
-  if(copy_page_table(p->pagetable, p->kpagetable, 0, p->sz) == -1)
-    goto bad;
+  copy_page_table(p->pagetable, p->kpagetable, 0, p->sz);
 
   if(p->pid == 1) 
     vmprint(p->pagetable);

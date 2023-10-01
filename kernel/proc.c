@@ -231,13 +231,15 @@ userinit(void)
 
   p = allocproc();
   initproc = p;
-  
+
   // allocate one user page and copy init's instructions
   // and data into it.
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
-
   copy_page_table(p->pagetable, p->kpagetable, 0, p->sz);
+  
+  //printf("Kernel table after copy:\n");
+  //vmprint(p->kpagetable);
 
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
@@ -262,12 +264,13 @@ growproc(int n)
   sz = p->sz;
   
   if(n > 0){
-    if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0 || copy_page_table(p->pagetable, p->kpagetable, sz, sz + n) == -1) {
+    if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
       return -1;
     }
+    copy_page_table(p->pagetable, p->kpagetable, sz, sz + n);
   } else if(n < 0){
+    kvmdealloc(p->kpagetable, sz, sz + n);// change that
     sz = uvmdealloc(p->pagetable, sz, sz + n);
-    uvmdealloc(p->kpagetable, sz, sz + n);
   }
   p->sz = sz;
   return 0;
@@ -294,11 +297,7 @@ fork(void)
     return -1;
   }
 
-  if(copy_page_table(np->pagetable, np->kpagetable, 0, p->sz) < 0){
-    freeproc(np);
-    release(&np->lock);
-    return -1;
-  }
+  copy_page_table(np->pagetable, np->kpagetable, 0, p->sz);
 
   np->sz = p->sz;
 
