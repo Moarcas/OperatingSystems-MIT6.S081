@@ -119,14 +119,12 @@ exec(char *path, char **argv)
   // Copy the memory from user page table to process kernel page table
   copy_page_table(p->pagetable, p->kpagetable, 0, p->sz);
 
-  if(p->pid == 1) 
-    vmprint(p->pagetable);
-
+  if(p->pid == 1) vmprint(p->pagetable);
   return argc; // this ends up in a0, the first argument to main(argc, argv)
 
  bad:
   if(pagetable)
-    proc_freepagetable(pagetable, p->sz);    
+    proc_freepagetable(pagetable, sz);    
   if(ip){
     iunlockput(ip);
     end_op();

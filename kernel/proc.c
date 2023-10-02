@@ -90,7 +90,7 @@ allocpid() {
 // and return with p->lock held.
 // If there are no free procs, or a memory allocation fails, return 0.
 static struct proc*
-    allocproc(void)
+allocproc(void)
 {
   struct proc *p;
 
@@ -122,7 +122,7 @@ found:
   }
   
   // Kernel page table.
-  p->kpagetable = create_kernel_pagetable(p);
+  p->kpagetable = create_kernel_pagetable();
   if(p->kpagetable == 0){
     freeproc(p);
     release(&p->lock);
@@ -132,7 +132,7 @@ found:
   // Alocate a page for the process kernel stack
   uint64 va = KSTACK((int) (p - proc));
   if(mappages(p->kpagetable, va, PGSIZE, kvmpa(va), PTE_R | PTE_W) != 0) 
-    panic("allocproc, mappages");
+    panic("allocproc: mappages");
 
   // Set up new context to start executing at forkret,
   // which returns to user space.
@@ -154,9 +154,9 @@ freeproc(struct proc *p)
   p->trapframe = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
+  p->pagetable = 0;
   if(p->kpagetable)
     kernel_freewalk(p->kpagetable);
-  p->pagetable = 0;
   p->kpagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -236,10 +236,8 @@ userinit(void)
   // and data into it.
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
+
   copy_page_table(p->pagetable, p->kpagetable, 0, p->sz);
-  
-  //printf("Kernel table after copy:\n");
-  //vmprint(p->kpagetable);
 
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
@@ -264,12 +262,15 @@ growproc(int n)
   sz = p->sz;
   
   if(n > 0){
+    if(sz + n > PLIC)
+      return -1;
+
     if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
       return -1;
     }
-    copy_page_table(p->pagetable, p->kpagetable, sz, sz + n);
+    copy_page_table(p->pagetable, p->kpagetable, p->sz, sz);
   } else if(n < 0){
-    kvmdealloc(p->kpagetable, sz, sz + n);// change that
+    kvmdealloc(p->kpagetable, sz, sz + n);
     sz = uvmdealloc(p->pagetable, sz, sz + n);
   }
   p->sz = sz;
@@ -297,11 +298,11 @@ fork(void)
     return -1;
   }
 
-  copy_page_table(np->pagetable, np->kpagetable, 0, p->sz);
-
   np->sz = p->sz;
 
   np->parent = p;
+  
+  copy_page_table(np->pagetable, np->kpagetable, 0, p->sz);
 
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
