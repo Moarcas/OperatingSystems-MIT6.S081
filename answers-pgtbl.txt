@@ -1,0 +1,18 @@
+Q: 
+Explain the output of vmprint in terms of Fig 3-4 from the text. What does page 0 contain? What is in page 2? When running in user mode, could the process read/write the memory mapped by page 1?
+A: 
+The output of vmprint shows the the map of the virtual addresses to physical addresses. The translation is made two steps. First we look in the first table for the PTE. The PTE is composed from the SAPT register and L2. This PTE contains the physical memory address of the next page table and some flags.  
+Page 0 contains pysical address 0x0000000087f6b000 and PTE_R, PTE_W, PTE_V, PTE_X, PTE_U flags
+Page 2 contains pysical address 0x0000000087f67000 and all flags 0
+No, beacause the PTE_U flag is 0
+
+Q:
+Explain why the third test srcva + len < srcva is necessary in copyin_new(): give values for srcva and len for which the first two test fail (i.e., they will not cause to return -1) but for which the third one is true (resulting in returning -1).
+A:
+Beacuse the len must be positive. 
+len =  -1
+srcva = 9
+p->sz = 10
+srcva > p->sz FALSE 
+srcva + len >= p->sz FALSE
+srvca + len < srcva TRUE
